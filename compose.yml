@@ -1,80 +1,130 @@
+name: foundation
+
 services:
   postgres:
-    image: postgres:latest
-    restart: always
+    image: postgres:18.3
     container_name: foundation_db
-    networks:
-      - foundation_network
+    restart: unless-stopped
+
     environment:
-      POSTGRES_USER: "@foundation_db"
-      POSTGRES_PASSWORD: "@foundation_db_0001"
-      POSTGRES_DB: "foundation_db"
+      POSTGRES_USER: ${POSTGRES_USER:-foundation}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-foundation_db}
+
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql
 
-  redis:
-    image: redis:latest
-    container_name: foundation_cache
     networks:
       - foundation_network
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    environment:
-      - REDIS_ARGS=--requirepass @foundation_cache_0001 --appendonly yes
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7.4
+    container_name: foundation_cache
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:latest
-    container_name: foundation_object_storage
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     environment:
-      MINIO_ROOT_USER: "@foundation"
-      MINIO_ROOT_PASSWORD: "@foundation_0001"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+
+    command:
+      - /bin/sh
+      - -c
+      - 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"'
+
+    ports:
+      - "127.0.0.1:6379:6379"
+
     volumes:
-      - ./minio_data:/data
+      - redis_data:/data
+
+    networks:
+      - foundation_network
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: foundation_object_storage
+    restart: unless-stopped
+
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+
     command: server /data --console-address ":9001"
-    restart: always
+
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+    volumes:
+      - minio_data:/data
+
     networks:
       - foundation_network
 
   kafka:
-    image: apache/kafka:latest
-    hostname: kafka
+    image: apache/kafka:3.9.1
     container_name: foundation_messenger
-    ports:
-      - "9092:9092"
-    volumes:
-      - kafka-data:/var/lib/kafka/data
+    hostname: kafka
     restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:9092:9092"
+
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
     networks:
       - foundation_network
+
     environment:
       KAFKA_NODE_ID: 1
+
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@foundation_messenger:9093
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
       KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://foundation_messenger:29092,EXTERNAL://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: >-
-        CONTROLLER:PLAINTEXT,
-        INTERNAL:PLAINTEXT,
-        EXTERNAL:PLAINTEXT
+
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
 volumes:
   postgres_data:
-  redis-data:
-  kafka-data:
+  redis_data:
+  minio_data:
+  kafka_data:
 
 networks:
   foundation_network:
