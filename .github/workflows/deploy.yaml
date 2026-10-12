@@ -30,6 +30,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify deployment configuration
+        env:
+            DEPLOY_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+            AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+            echo "Role: $DEPLOY_ROLE"
+            echo "Region: $AWS_REGION"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
