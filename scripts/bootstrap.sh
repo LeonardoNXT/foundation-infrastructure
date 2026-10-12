@@ -26,6 +26,7 @@ check_operating_system() {
     [[ -f /etc/os-release ]] ||
         fail "Cannot identify operating system"
 
+    # shellcheck source=/dev/null
     source /etc/os-release
 
     if [[ "${ID:-}" != "amzn" || "${VERSION_ID:-}" != "2023" ]]; then
