@@ -38,6 +38,21 @@ jobs:
             echo "Role: $DEPLOY_ROLE"
             echo "Region: $AWS_REGION"
 
+      - name: Inspect deployment OIDC claims
+        shell: bash
+        run: |
+            TOKEN_RESPONSE=$(curl -fsSL \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+
+            TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.value')
+
+            PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f 2)
+
+            echo "$PAYLOAD" \
+            | base64 -d 2>/dev/null \
+            | jq '{aud, sub, repository, ref, environment}'
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
