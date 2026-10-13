@@ -18,40 +18,38 @@ jobs:
     name: Foundation Deployment
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 30
 
     steps:
-      - name: Validate release SHA
+      - name: Validate deployment inputs
         shell: bash
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
+          ARTIFACT_BUCKET: ${{ vars.FOUNDATION_ARTIFACT_BUCKET }}
+          INSTANCE_ID: ${{ vars.FOUNDATION_INSTANCE_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
-          if [[ ! "$RELEASE_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            echo "::error::Invalid commit SHA"
+          set -euo pipefail
+
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "::error::Invalid release SHA"
             exit 1
-          fi
+          }
 
-      - name: Verify deployment configuration
-        env:
-            DEPLOY_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-            AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-            echo "Role: $DEPLOY_ROLE"
-            echo "Region: $AWS_REGION"
+          [[ "$ARTIFACT_BUCKET" =~ ^[a-z0-9][a-z0-9.-]+$ ]] || {
+            echo "::error::Invalid artifact bucket"
+            exit 1
+          }
 
-      - name: Inspect deployment OIDC claims
-        shell: bash
-        run: |
-            TOKEN_RESPONSE=$(curl -fsSL \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+          [[ "$INSTANCE_ID" =~ ^i-[a-f0-9]+$ ]] || {
+            echo "::error::Invalid instance ID"
+            exit 1
+          }
 
-            TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.value')
-
-            PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f 2)
-
-            echo "$PAYLOAD" \
-            | base64 -d 2>/dev/null \
-            | jq '{aud, sub, repository, ref, environment}'
+          [[ "$AWS_REGION" =~ ^[a-z0-9-]+$ ]] || {
+            echo "::error::Invalid AWS region"
+            exit 1
+          }
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -62,29 +60,111 @@ jobs:
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
-      - name: Send diagnostic command via SSM
+      - name: Deploy release via SSM
         shell: bash
         env:
-          INSTANCE_ID: ${{ vars.FOUNDATION_INSTANCE_ID }}
           RELEASE_SHA: ${{ inputs.release_sha }}
+          ARTIFACT_BUCKET: ${{ vars.FOUNDATION_ARTIFACT_BUCKET }}
+          INSTANCE_ID: ${{ vars.FOUNDATION_INSTANCE_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
+
+          read -r -d '' REMOTE_SCRIPT <<'REMOTE' || true
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          umask 077
+
+          : "${RELEASE_SHA:?}"
+          : "${ARTIFACT_BUCKET:?}"
+          : "${AWS_REGION:?}"
+
+          RELEASES_DIR="/opt/foundation/releases"
+
+          [[ -d "$RELEASES_DIR" ]] || {
+            echo "Foundation bootstrap is required" >&2
+            exit 1
+          }
+
+          STAGING_DIR="$(mktemp -d "$RELEASES_DIR/.staging.XXXXXXXX")"
+
+          cleanup() {
+            if [[ -d "$STAGING_DIR" ]]; then
+              rm -rf -- "$STAGING_DIR"
+            fi
+          }
+
+          trap cleanup EXIT
+
+          OBJECT_PREFIX="releases/$RELEASE_SHA"
+
+          aws s3 cp \
+            "s3://$ARTIFACT_BUCKET/$OBJECT_PREFIX/foundation-infra.tar.gz" \
+            "$STAGING_DIR/foundation-infra.tar.gz" \
+            --region "$AWS_REGION"
+
+          aws s3 cp \
+            "s3://$ARTIFACT_BUCKET/$OBJECT_PREFIX/foundation-infra.tar.gz.sha256" \
+            "$STAGING_DIR/foundation-infra.tar.gz.sha256" \
+            --region "$AWS_REGION"
+
+          (
+            cd "$STAGING_DIR"
+            sha256sum -c foundation-infra.tar.gz.sha256
+          )
+
+          tar -xzf \
+            "$STAGING_DIR/foundation-infra.tar.gz" \
+            -C "$STAGING_DIR" \
+            --no-same-owner
+
+          bash "$STAGING_DIR/scripts/deploy.sh" \
+            "$RELEASE_SHA" \
+            "$STAGING_DIR"
+          REMOTE
+
+          REMOTE_COMMAND=$(printf \
+            'RELEASE_SHA=%q ARTIFACT_BUCKET=%q AWS_REGION=%q bash -c %q' \
+            "$RELEASE_SHA" \
+            "$ARTIFACT_BUCKET" \
+            "$AWS_REGION" \
+            "$REMOTE_SCRIPT")
+
+          jq -n \
+            --arg command "$REMOTE_COMMAND" \
+            '{commands: [$command]}' > ssm-parameters.json
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[\"echo Foundation diagnostic deployment\",\"echo Release: ${RELEASE_SHA}\",\"whoami\",\"hostname\"]" \
+            --parameters file://ssm-parameters.json \
             --query "Command.CommandId" \
             --output text)
 
+          rm -f ssm-parameters.json
+
           echo "SSM Command ID: $COMMAND_ID"
 
-          aws ssm wait command-executed \
+          if ! aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID"
+            --instance-id "$INSTANCE_ID"; then
+
+            echo "::error::Foundation deployment failed or timed out"
+
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query '{Status:Status,Details:StatusDetails,Output:StandardOutputContent,Error:StandardErrorContent}' \
+              --output json || true
+
+            exit 1
+          fi
 
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$INSTANCE_ID" \
-            --query '{Status:Status,Output:StandardOutputContent}' \
+            --query '{Status:Status,Details:StatusDetails,Output:StandardOutputContent,Error:StandardErrorContent}' \
             --output json
+
+          echo "Foundation deployment completed."
