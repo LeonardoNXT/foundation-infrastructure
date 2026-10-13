@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 AWS_REGION="${AWS_REGION:-sa-east-1}"
 PARAMETER_PREFIX="/foundation/production"
@@ -37,16 +37,19 @@ write_secret() {
     local parameter_name="$1"
     local filename="$2"
     local value
+    local temp_file
 
     value="$(load_parameter "$parameter_name")" || return 1
 
-    printf '%s' "$value" > "$SECRETS_DIR/$filename"
-    chmod 0600 "$SECRETS_DIR/$filename"
+    temp_file="$(mktemp "$SECRETS_DIR/.${filename}.XXXXXX")"
+
+    printf '%s' "$value" > "$temp_file"
+    chmod 0600 "$temp_file"
+
+    mv -f -- "$temp_file" "$SECRETS_DIR/$filename"
 }
 
 write_secret "postgres/password" "postgres_password"
-write_secret "minio/root-user" "minio_root_user"
-write_secret "minio/root-password" "minio_root_password"
 
 redis_password="$(load_parameter "redis/password")"
 
@@ -58,10 +61,15 @@ fi
 redis_password="${redis_password//\\/\\\\}"
 redis_password="${redis_password//\"/\\\"}"
 
-printf 'appendonly yes\nrequirepass "%s"\n' \
-    "$redis_password" > "$SECRETS_DIR/redis.conf"
+redis_temp_file="$(mktemp "$SECRETS_DIR/.redis.conf.XXXXXX")"
 
-chmod 0600 "$SECRETS_DIR/redis.conf"
+printf 'appendonly yes\nrequirepass "%s"\n' \
+    "$redis_password" > "$redis_temp_file"
+
+chmod 0600 "$redis_temp_file"
+
+mv -f -- "$redis_temp_file" "$SECRETS_DIR/redis.conf"
+
 unset redis_password
 
 echo "Foundation secrets prepared successfully."

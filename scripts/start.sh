@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -8,7 +8,6 @@ PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 readonly PROJECT_DIR
 
 readonly COMPOSE_FILE="$PROJECT_DIR/compose.prod.yml"
-
 readonly SECRETS_DIR="/var/lib/foundation/secrets"
 
 log() {
@@ -57,9 +56,7 @@ load_secrets() {
 
     for secret in \
         postgres_password \
-        redis.conf \
-        minio_root_user \
-        minio_root_password
+        redis.conf
     do
         [[ -s "$SECRETS_DIR/$secret" ]] \
             || fail "Missing or empty secret file: $secret"
@@ -103,6 +100,7 @@ validate_compose() {
 
     docker compose \
         -f "$COMPOSE_FILE" \
+        -p foundation \
         config --quiet \
         || fail "Invalid Docker Compose configuration"
 }
@@ -117,7 +115,7 @@ verify_services() {
     local attempt
     local ready
 
-    for service in postgres redis minio kafka; do
+    for service in postgres redis kafka; do
         container_id="$(docker compose \
             -f "$COMPOSE_FILE" \
             -p foundation \
@@ -162,7 +160,7 @@ start_services() {
     docker compose \
         -f "$COMPOSE_FILE" \
         -p foundation \
-        up -d \
+        up -d --remove-orphans \
         || fail "Failed to start Foundation services"
 }
 
@@ -171,6 +169,7 @@ show_status() {
 
     docker compose \
         -f "$COMPOSE_FILE" \
+        -p foundation \
         ps
 }
 

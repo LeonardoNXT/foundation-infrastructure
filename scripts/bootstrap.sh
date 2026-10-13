@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-
-set -euo pipefail
+set -Eeuo pipefail
 
 FOUNDATION_ROOT="/opt/foundation"
 FOUNDATION_INFRA="$FOUNDATION_ROOT/infra"
@@ -74,6 +73,7 @@ install_docker() {
     fi
 
     systemctl enable --now docker
+
     systemctl is-active --quiet docker ||
         fail "Docker service is not running"
 
