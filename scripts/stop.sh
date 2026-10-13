@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+
+PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+readonly PROJECT_DIR
+
 readonly COMPOSE_FILE="$PROJECT_DIR/compose.prod.yml"
 
 log() {
