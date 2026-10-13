@@ -9,6 +9,8 @@ readonly PROJECT_DIR
 
 readonly COMPOSE_FILE="$PROJECT_DIR/compose.prod.yml"
 
+readonly SECRETS_DIR="/var/lib/foundation/secrets"
+
 log() {
     printf '[Foundation] %s\n' "$*"
 }
