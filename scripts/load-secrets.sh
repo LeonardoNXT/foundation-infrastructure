@@ -66,7 +66,8 @@ redis_temp_file="$(mktemp "$SECRETS_DIR/.redis.conf.XXXXXX")"
 printf 'appendonly yes\nrequirepass "%s"\n' \
     "$redis_password" > "$redis_temp_file"
 
-chmod 0600 "$redis_temp_file"
+chown root:999 "$redis_temp_file"
+chmod 0640 "$redis_temp_file"
 
 mv -f -- "$redis_temp_file" "$SECRETS_DIR/redis.conf"
 
