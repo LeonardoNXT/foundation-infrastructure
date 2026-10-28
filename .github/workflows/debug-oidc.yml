@@ -1,0 +1,36 @@
+
+name: Debug GitHub OIDC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+jobs:
+  inspect-oidc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Inspect OIDC Claims
+        shell: bash
+        run: |
+          RESPONSE=$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+
+          JWT=$(echo "$RESPONSE" | jq -r '.value')
+
+          PAYLOAD=$(echo "$JWT" | cut -d '.' -f2)
+
+          echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{
+            iss,
+            aud,
+            sub,
+            repository,
+            repository_id,
+            repository_owner,
+            repository_owner_id,
+            ref,
+            ref_type
+          }'
