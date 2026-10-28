@@ -12,25 +12,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Inspect OIDC Claims
-        shell: bash
-        run: |
-          RESPONSE=$(curl --fail --silent --show-error \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
+      - name: Inspect OIDC with JavaScript
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken("sts.amazonaws.com");
 
-          JWT=$(echo "$RESPONSE" | jq -r '.value')
+            const [, encodedPayload] = token.split(".");
 
-          PAYLOAD=$(echo "$JWT" | cut -d '.' -f2)
+            const payload = JSON.parse(
+              Buffer.from(encodedPayload, "base64url").toString("utf8")
+            );
 
-          echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{
-            iss,
-            aud,
-            sub,
-            repository,
-            repository_id,
-            repository_owner,
-            repository_owner_id,
-            ref,
-            ref_type
-          }'
+            const {
+              iss,
+              aud,
+              sub,
+              repository,
+              repository_id,
+              repository_owner,
+              repository_owner_id,
+              ref,
+              ref_type,
+            } = payload;
+
+            console.log(JSON.stringify({
+              iss,
+              aud,
+              sub,
+              repository,
+              repository_id,
+              repository_owner,
+              repository_owner_id,
+              ref,
+              ref_type,
+            }, null, 2));
