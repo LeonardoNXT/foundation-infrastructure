@@ -16,3 +16,7 @@ override.tf.json
 
 crash.log
 crash.*.log
+
+node_modules
+dist
+.DS_Store
