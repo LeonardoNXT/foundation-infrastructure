@@ -1,0 +1,25 @@
+name: AWS Terraform Apply
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    apply:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                role-to-assume: ${{vars.AWS_TERRAFORM_APPLY}}
+                aws-region: ${{vars.AWS_REGION}}
+
+            - name: Verify AWS Identity
+              run: aws sts get-caller-identity
+
+    
+     
