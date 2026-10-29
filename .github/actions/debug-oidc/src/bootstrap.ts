@@ -10,6 +10,11 @@ type GithubOIDC = {
   ref_type: string;
 };
 
+type GithubOIDCResponse = {
+  count: number;
+  value: string;
+};
+
 export default class Bootstrap {
   private static ACTIONS_ID_TOKEN_REQUEST_TOKEN: string;
   private static ACTIONS_ID_TOKEN_REQUEST_URL: string;
@@ -34,11 +39,9 @@ export default class Bootstrap {
         );
       }
 
-      const data = (await response.json()) as string;
+      const data = (await response.json()) as GithubOIDCResponse;
 
-      console.log(data);
-
-      const [_, encryptedOIDCToken] = data.split(".");
+      const [_, encryptedOIDCToken] = data.value.split(".");
 
       if (!encryptedOIDCToken) {
         throw new Error("[JWT][PAYLOAD][ERROR] The token has empty payload");
