@@ -62,14 +62,14 @@ export default class Bootstrap {
   private static verifyEnvironment(): void {
     if (
       process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN == null ||
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.length == 0
+      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.length === 0
     ) {
       throw new Error("ACTION_ID_TOKEN_REQUEST_TOKEN is empty");
     }
 
     if (
       process.env.ACTIONS_ID_TOKEN_REQUEST_URL == null ||
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.length == 0
+      process.env.ACTIONS_ID_TOKEN_REQUEST_URL.length === 0
     ) {
       throw new Error("ACTIONS_ID_TOKEN_REQUEST_URL is empty");
     }
