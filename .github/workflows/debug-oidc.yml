@@ -10,6 +10,7 @@ permissions:
 jobs:
   inspect-oidc:
     runs-on: ubuntu-latest
+    environment: production
 
     permissions:
       contents: read
