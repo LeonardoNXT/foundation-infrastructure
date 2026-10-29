@@ -36,6 +36,8 @@ export default class Bootstrap {
 
       const data = (await response.json()) as string;
 
+      console.log(data);
+
       const [_, encryptedOIDCToken] = data.split(".");
 
       if (!encryptedOIDCToken) {
