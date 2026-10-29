@@ -5,35 +5,35 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
   inspect-oidc:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Node 24 
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '24' 
-      
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: .github/actions/debug-oidc/package-lock.json
+
       - name: Install DEBUG OIDC dependencies
         working-directory: ./.github/actions/debug-oidc
-        run: npm install
+        run: npm ci
+
       - name: Build DEBUG OIDC
         working-directory: ./.github/actions/debug-oidc
         run: npm run build
 
       - name: Execute DEBUG OIDC Verification
         working-directory: ./.github/actions/debug-oidc
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL}}
-
         run: npm run start
-          
-

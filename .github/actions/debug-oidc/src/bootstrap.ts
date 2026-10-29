@@ -15,68 +15,110 @@ type GithubOIDCResponse = {
   value: string;
 };
 
+type OIDCEnvironment = {
+  requestToken: string;
+  requestUrl: URL;
+};
+
 export default class Bootstrap {
-  private static ACTIONS_ID_TOKEN_REQUEST_TOKEN: string;
-  private static ACTIONS_ID_TOKEN_REQUEST_URL: string;
+  private static readonly AUDIENCE = "sts.amazonaws.com";
 
-  public static async execute() {
+  public static async execute(): Promise<void> {
     try {
-      this.verifyEnvironment();
+      const { requestToken, requestUrl } = this.verifyEnvironment();
 
-      const response = await fetch(
-        this.ACTIONS_ID_TOKEN_REQUEST_URL + "&audience=sts.amazonaws.com",
-        {
-          headers: {
-            Authorization: "Bearer " + this.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-          },
+      requestUrl.searchParams.set("audience", this.AUDIENCE);
+
+      const response = await fetch(requestUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${requestToken}`,
         },
-      );
+        signal: AbortSignal.timeout(10_000),
+      });
 
       if (!response.ok) {
         throw new Error(
-          `[GET][ERROR] Github Error 
-         [STATUS] : ${response.status}`,
+          `[OIDC][HTTP] Request failed with status ${response.status}`,
         );
       }
 
-      const data = (await response.json()) as GithubOIDCResponse;
+      const data: unknown = await response.json();
+      const jwt = this.extractToken(data);
+      const claims = this.decodePayload(jwt);
 
-      const [_, encryptedOIDCToken] = data.value.split(".");
-
-      if (!encryptedOIDCToken) {
-        throw new Error("[JWT][PAYLOAD][ERROR] The token has empty payload");
-      }
-
-      const token: GithubOIDC = JSON.parse(
-        Buffer.from(encryptedOIDCToken, "base64url").toString(),
+      console.log(JSON.stringify(claims, null, 2));
+    } catch (error: unknown) {
+      console.error(
+        "[OIDC][ERROR]",
+        error instanceof Error ? error.message : String(error),
       );
 
-      console.log(JSON.stringify(token, null, 2));
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        console.error(err.message);
-      }
+      process.exitCode = 1;
     }
   }
 
-  private static verifyEnvironment(): void {
-    if (
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN == null ||
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.length === 0
-    ) {
-      throw new Error("ACTION_ID_TOKEN_REQUEST_TOKEN is empty");
+  private static verifyEnvironment(): OIDCEnvironment {
+    const requestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+
+    const requestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+
+    if (!requestToken?.trim()) {
+      throw new Error("[OIDC][ENV] ACTIONS_ID_TOKEN_REQUEST_TOKEN is missing");
     }
 
-    if (
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL == null ||
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL.length === 0
-    ) {
-      throw new Error("ACTIONS_ID_TOKEN_REQUEST_URL is empty");
+    if (!requestUrl?.trim()) {
+      throw new Error("[OIDC][ENV] ACTIONS_ID_TOKEN_REQUEST_URL is missing");
     }
 
-    this.ACTIONS_ID_TOKEN_REQUEST_TOKEN =
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-    this.ACTIONS_ID_TOKEN_REQUEST_URL =
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+    const url = new URL(requestUrl);
+
+    if (url.protocol !== "https:") {
+      throw new Error("[OIDC][ENV] Request URL must use HTTPS");
+    }
+
+    return {
+      requestToken,
+      requestUrl: url,
+    };
+  }
+
+  private static extractToken(data: unknown): string {
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("value" in data) ||
+      typeof data.value !== "string" ||
+      !data.value
+    ) {
+      throw new Error("[OIDC][RESPONSE] Missing JWT value");
+    }
+
+    return data.value;
+  }
+
+  private static decodePayload(jwt: string): GithubOIDC {
+    const segments = jwt.split(".");
+
+    if (segments.length !== 3 || !segments[1]) {
+      throw new Error("[OIDC][JWT] Invalid JWT structure");
+    }
+
+    const decoded = Buffer.from(segments[1], "base64url").toString("utf8");
+
+    const payload: unknown = JSON.parse(decoded);
+
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !("sub" in payload) ||
+      typeof payload.sub !== "string" ||
+      !("aud" in payload) ||
+      payload.aud !== this.AUDIENCE
+    ) {
+      throw new Error("[OIDC][JWT] Invalid claims");
+    }
+
+    return payload as GithubOIDC;
   }
 }
