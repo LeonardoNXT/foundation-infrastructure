@@ -51,7 +51,7 @@ export default class Bootstrap {
         Buffer.from(encryptedOIDCToken, "base64url").toString(),
       );
 
-      console.log(JSON.stringify(token), null, "2");
+      console.log(JSON.stringify(token, null, "2"));
     } catch (err: unknown) {
       if (err instanceof Error) {
         console.error(err.message);
