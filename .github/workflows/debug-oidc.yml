@@ -6,44 +6,34 @@ on:
 
 permissions:
   id-token: write
+  contents: read
 
 jobs:
   inspect-oidc:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Inspect OIDC with JavaScript
-        uses: actions/github-script@v8
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node 24 
+        uses: actions/setup-node@v4
         with:
-          script: |
-            const token = await core.getIDToken("sts.amazonaws.com");
+          node-version: '24' 
+      
+      - name: Install DEBUG OIDC dependencies
+        working-directory: ./.github/actions/debug-oidc
+        run: npm install
+      - name: Build DEBUG OIDC
+        working-directory: ./.github/actions/debug-oidc
+        run: npm run build
 
-            const [, encodedPayload] = token.split(".");
+      - name: Execute DEBUG OIDC Verification
+        working-directory: ./.github/actions/debug-oidc
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL}}
 
-            const payload = JSON.parse(
-              Buffer.from(encodedPayload, "base64url").toString("utf8")
-            );
+        run: npm run start
+          
 
-            const {
-              iss,
-              aud,
-              sub,
-              repository,
-              repository_id,
-              repository_owner,
-              repository_owner_id,
-              ref,
-              ref_type,
-            } = payload;
-
-            console.log(JSON.stringify({
-              iss,
-              aud,
-              sub,
-              repository,
-              repository_id,
-              repository_owner,
-              repository_owner_id,
-              ref,
-              ref_type,
-            }, null, 2));
